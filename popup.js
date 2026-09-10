@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   setupTabs();
   setupFileUpload();
+  setupPasteSection();
   setupVariableChips();
   setupPreview();
   setupStartButton();
@@ -125,7 +126,7 @@ function parseCSV(text) {
   }
 
   // Update UI
-  fileName.textContent = fileInput.files[0].name;
+  fileName.textContent = fileInput.files[0] ? fileInput.files[0].name : 'Pasted Numbers';
   fileRows.textContent = beneficiaries.length;
   fileInfo.style.display = 'block';
   
@@ -134,6 +135,62 @@ function parseCSV(text) {
   
   // Enable start button if message is not empty
   checkStartButton();
+}
+
+// --- 2.5 Manual Paste Parsing ---
+function setupPasteSection() {
+  const processBtn = document.getElementById('processPastedBtn');
+  const pasteNumbers = document.getElementById('pasteNumbers');
+
+  if (processBtn && pasteNumbers) {
+    processBtn.addEventListener('click', () => {
+      const text = pasteNumbers.value.trim();
+      if (!text) {
+        showStatus('Please paste some numbers first.', 'error');
+        return;
+      }
+
+      // Split by newline, comma, or tab
+      const rawNumbers = text.split(/[\n,\t]+/);
+      const parsedBeneficiaries = [];
+
+      rawNumbers.forEach(raw => {
+        // Strip out any characters that are not digits or a leading plus sign
+        let cleanNumber = raw.replace(/[^\d+]/g, '');
+
+        // Remove spaces, hyphens, parentheses (already handled by regex above, but keeping explicit if needed)
+        // cleanNumber = cleanNumber.replace(/[\s\-\(\)]/g, '');
+
+        if (cleanNumber.length >= 10) { // Basic validation
+          parsedBeneficiaries.push({
+            'Phone': cleanNumber,
+            'Name': 'Beneficiary'
+          });
+        }
+      });
+
+      if (parsedBeneficiaries.length === 0) {
+        showStatus('No valid phone numbers found.', 'error');
+        return;
+      }
+
+      // Overwrite or append? Let's overwrite for simplicity, or append if users prefer
+      beneficiaries = parsedBeneficiaries;
+      csvHeaders = ['Phone', 'Name'];
+
+      fileName.textContent = 'Pasted Numbers';
+      fileRows.textContent = beneficiaries.length;
+      fileInfo.style.display = 'block';
+
+      generateVariableChips();
+      showStatus(`Successfully loaded ${beneficiaries.length} numbers!`, 'success');
+
+      checkStartButton();
+
+      // Clear textarea
+      pasteNumbers.value = '';
+    });
+  }
 }
 
 // --- 3. Dynamic Variable Chips ---

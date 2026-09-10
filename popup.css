@@ -204,6 +204,50 @@ body {
   color: #667781;
 }
 
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 15px 0;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.divider span {
+  padding: 0 10px;
+}
+
+.paste-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.paste-section textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.paste-section textarea:focus {
+  outline: none;
+  border-color: #128C7E;
+  box-shadow: 0 0 0 2px rgba(18, 140, 126, 0.1);
+}
+
 .file-info {
   margin-top: 12px;
   padding: 10px;

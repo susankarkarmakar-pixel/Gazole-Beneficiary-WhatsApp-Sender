@@ -71,9 +71,20 @@
             </div>
           </div>
         </label>
+
+        <div class="divider">
+          <span>OR</span>
+        </div>
+
+        <div class="paste-section">
+          <label class="form-label">Paste Numbers (Excel/Sheets)</label>
+          <textarea id="pasteNumbers" placeholder="Paste phone numbers here...&#10;+919876543210&#10;98765 43210" rows="4"></textarea>
+          <button class="btn btn-secondary" id="processPastedBtn">➕ Add Pasted Numbers</button>
+        </div>
+
         <div id="fileInfo" class="file-info" style="display: none;">
           <div class="file-badge">✅ <span id="fileName"></span></div>
-          <div class="file-meta"><span id="fileRows">0</span> rows detected</div>
+          <div class="file-meta"><span id="fileRows">0</span> numbers detected</div>
         </div>
       </div>
 
