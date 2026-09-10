@@ -281,8 +281,13 @@ async function saveState() {
 async function loadState() {
   const result = await chrome.storage.local.get('gazoleState');
   if (result.gazoleState) {
-    // Can auto-resume if needed
-    // currentState = result.gazoleState;
+    // Restore state and resume if it was running and not stopped
+    currentState = result.gazoleState;
+
+    if (currentState.isRunning && !currentState.isPaused) {
+      console.log('Auto-resuming WhatsApp sender...');
+      processNextBatch();
+    }
   }
 }
 
