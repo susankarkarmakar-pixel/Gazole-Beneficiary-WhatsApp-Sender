@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gazole Beneficiary WhatsApp Sender</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-icon">📱</div>
+      <div class="header-title">
+        <h1>Gazole Beneficiary</h1>
+        <p>WhatsApp Sender</p>
+      </div>
+    </div>
+
+    <!-- Stats Dashboard -->
+    <div class="stats-dashboard" id="statsDashboard" style="display: none;">
+      <div class="stat-card">
+        <div class="stat-value" id="totalStats">0</div>
+        <div class="stat-label">Total</div>
+      </div>
+      <div class="stat-card success">
+        <div class="stat-value" id="sentStats">0</div>
+        <div class="stat-label">Sent</div>
+      </div>
+      <div class="stat-card error">
+        <div class="stat-value" id="failedStats">0</div>
+        <div class="stat-label">Failed</div>
+      </div>
+      <div class="stat-card pending">
+        <div class="stat-value" id="pendingStats">0</div>
+        <div class="stat-label">Pending</div>
+      </div>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="progress-section" id="progressSection" style="display: none;">
+      <div class="phase-info">
+        <span class="phase-badge">Phase <span id="currentPhase">1</span> of <span id="totalPhases">10</span></span>
+        <span class="progress-text"><span id="progressCount">0</span> / <span id="totalCount">0</span></span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="phase-timer" id="phaseTimer" style="display: none;">
+        ⏳ Next phase in: <strong id="timerValue">00:00</strong>
+      </div>
+    </div>
+
+    <!-- Main Content Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="upload">📤 Upload</button>
+      <button class="tab-btn" data-tab="message">✉️ Message</button>
+      <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+    </div>
+
+    <!-- Upload Tab -->
+    <div class="tab-content active" id="uploadTab">
+      <div class="upload-section">
+        <label class="file-label">
+          <input type="file" id="csvFile" accept=".csv,.xlsx,.xls" style="display: none;">
+          <div class="file-drop-area">
+            <div class="file-icon"></div>
+            <div class="file-text">
+              <strong>Click or Drag CSV/Excel File</strong>
+              <p>Upload beneficiary list (Name, Phone, Status, etc.)</p>
+            </div>
+          </div>
+        </label>
+        <div id="fileInfo" class="file-info" style="display: none;">
+          <div class="file-badge">✅ <span id="fileName"></span></div>
+          <div class="file-meta"><span id="fileRows">0</span> rows detected</div>
+        </div>
+      </div>
+
+      <!-- Column Mapping -->
+      <div class="column-mapping" id="columnMapping" style="display: none;">
+        <h3>📋 Map Columns</h3>
+        <div class="mapping-grid" id="mappingGrid"></div>
+      </div>
+    </div>
+
+    <!-- Message Tab -->
+    <div class="tab-content" id="messageTab">
+      <div class="message-builder">
+        <label class="form-label">Message Template</label>
+        <textarea id="messageTemplate" placeholder="Type your message here...&#10;&#10;Example:&#10;Dear {{Name}},&#10;Your application status: {{Status}}&#10;Apply here: {{Link}}" rows="6"></textarea>
+        
+        <!-- Variable Chips -->
+        <div class="variable-chips" id="variableChips">
+          <span class="chip-label">Insert Variables:</span>
+          <div id="chipsContainer"></div>
+        </div>
+
+        <!-- Auto Signature Toggle -->
+        <div class="toggle-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="autoSignature" checked>
+            <span class="toggle-slider"></span>
+            Add auto signature (- Gazole BDO Office)
+          </label>
+        </div>
+      </div>
+
+      <!-- Preview Button -->
+      <button class="btn btn-secondary" id="previewBtn">️ Preview Messages</button>
+
+      <!-- Preview Section -->
+      <div class="preview-section" id="previewSection" style="display: none;">
+        <h3>📝 Message Preview</h3>
+        <div id="previewContainer"></div>
+        <button class="btn btn-primary" id="confirmPreview">✅ Looks Good!</button>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div class="tab-content" id="settingsTab">
+      <div class="settings-group">
+        <h3>⚡ Speed Settings</h3>
+        
+        <div class="setting-row">
+          <label>Delay between messages (seconds)</label>
+          <div class="range-inputs">
+            <input type="number" id="minDelay" value="5" min="1" max="30">
+            <span>to</span>
+            <input type="number" id="maxDelay" value="15" min="1" max="60">
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <label>Phase cooldown (minutes)</label>
+          <input type="number" id="phaseCooldown" value="5" min="1" max="30">
+        </div>
+
+        <div class="setting-row">
+          <label>Messages per phase</label>
+          <input type="number" id="batchSize" value="50" min="10" max="100">
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>🛡️ Safety</h3>
+        <div class="toggle-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="dailyLimit" checked>
+            <span class="toggle-slider"></span>
+            Daily limit (200 messages/day)
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+      <button class="btn btn-test" id="testSendBtn"> Test Send</button>
+      <button class="btn btn-primary" id="startBtn" disabled>🚀 Start Sending</button>
+      <button class="btn btn-warning" id="pauseBtn" style="display: none;">⏸️ Pause</button>
+      <button class="btn btn-danger" id="stopBtn" style="display: none;">⏹️ Stop</button>
+    </div>
+
+    <!-- Export Buttons (shown after completion) -->
+    <div class="export-buttons" id="exportButtons" style="display: none;">
+      <button class="btn btn-success" id="exportReport">📊 Export Full Report</button>
+      <button class="btn btn-error" id="exportFailed">❌ Export Failed Numbers</button>
+    </div>
+
+    <!-- Status Messages -->
+    <div id="statusMessage" class="status-message"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
