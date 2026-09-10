@@ -13,15 +13,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function executeWhatsAppAction(text) {
   return new Promise(async (resolve, reject) => {
     try {
-      // 1. Wait for the chat to load (sometimes takes a second)
-      await waitForElement('div[contenteditable="true"][data-tab="10"]', 5000);
+      // Message input box selectors (WhatsApp updates these frequently)
+      const inputSelectors = [
+        'div[contenteditable="true"][data-tab="10"]',
+        'div[contenteditable="true"][title="Type a message"]',
+        'div[contenteditable="true"][title="Type a message\u2026"]',
+        '#main footer div[contenteditable="true"]'
+      ];
       
-      // 2. Find the message input box
-      const inputBox = document.querySelector('div[contenteditable="true"][data-tab="10"]');
+      // 1. Wait for the chat to load (sometimes takes a second)
+      let inputBox = null;
+      for (const selector of inputSelectors) {
+        try {
+          inputBox = await waitForElement(selector, 2000);
+          if (inputBox) break;
+        } catch (e) {
+          // ignore timeout and try next selector
+        }
+      }
       
       if (!inputBox) {
         // Check if it's an invalid number popup
-        if (document.querySelector('span[data-testid="block-dialog"]')) {
+        if (document.querySelector('span[data-testid="block-dialog"]') || document.querySelector('div[data-testid="popup-contents"]')) {
           closeInvalidNumberPopup();
           reject(new Error('Invalid number or not on WhatsApp'));
           return;

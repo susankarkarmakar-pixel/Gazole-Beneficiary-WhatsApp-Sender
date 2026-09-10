@@ -18,7 +18,14 @@ const previewBtn = document.getElementById('previewBtn');
 const previewSection = document.getElementById('previewSection');
 const previewContainer = document.getElementById('previewContainer');
 const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const stopBtn = document.getElementById('stopBtn');
+const exportReportBtn = document.getElementById('exportReport');
+const exportFailedBtn = document.getElementById('exportFailed');
 const statusMessage = document.getElementById('statusMessage');
+const statsDashboard = document.getElementById('statsDashboard');
+const progressSection = document.getElementById('progressSection');
+const exportButtons = document.getElementById('exportButtons');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -28,6 +35,15 @@ document.addEventListener('DOMContentLoaded', () => {
   setupVariableChips();
   setupPreview();
   setupStartButton();
+  setupControlButtons();
+  setupStateListener();
+
+  // Request current state from background script in case it's already running
+  chrome.runtime.sendMessage({ action: 'GET_STATE' }, (response) => {
+    if (response && response.state) {
+      updateUIWithState(response.state);
+    }
+  });
 });
 
 // --- 1. Tab Switching Logic ---
@@ -62,7 +78,32 @@ function setupFileUpload() {
 }
 
 function parseCSV(text) {
-  // Simple CSV parser
+  // Robust CSV parser
+  const parseLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++; // skip next quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
   const lines = text.split('\n').filter(line => line.trim() !== '');
   if (lines.length < 2) {
     showStatus('Invalid CSV file. Must have headers and at least one row.', 'error');
@@ -70,13 +111,12 @@ function parseCSV(text) {
   }
 
   // Extract headers (remove quotes if any)
-  csvHeaders = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  csvHeaders = parseLine(lines[0]);
   
   // Extract data
   beneficiaries = [];
   for (let i = 1; i < lines.length; i++) {
-    // Handle simple comma separation. For complex CSVs with commas inside quotes, a regex is needed.
-    const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+    const values = parseLine(lines[i]);
     let row = {};
     csvHeaders.forEach((header, index) => {
       row[header] = values[index] || '';
@@ -206,10 +246,122 @@ function setupStartButton() {
         showStatus('Error starting process.', 'error');
       } else {
         showStatus('Process started! Keep this tab open.', 'success');
-        // Switch to a "Sending" state UI (optional, can be expanded)
+        // Let the state update via background.js handle the UI
+        chrome.runtime.sendMessage({ action: 'GET_STATE' }, (res) => {
+          if (res && res.state) {
+            updateUIWithState(res.state);
+          }
+        });
       }
     });
   });
+}
+
+function setupControlButtons() {
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', () => {
+      if (pauseBtn.textContent.includes('Pause')) {
+        chrome.runtime.sendMessage({ action: 'PAUSE' });
+        pauseBtn.textContent = '▶️ Resume';
+      } else {
+        chrome.runtime.sendMessage({ action: 'RESUME' });
+        pauseBtn.textContent = '⏸️ Pause';
+      }
+    });
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'STOP' });
+    });
+  }
+
+  if (exportReportBtn) {
+    exportReportBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'EXPORT_REPORT' });
+    });
+  }
+
+  if (exportFailedBtn) {
+    exportFailedBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'EXPORT_FAILED' });
+    });
+  }
+}
+
+function setupStateListener() {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'STATE_UPDATE') {
+      updateUIWithState(message.state);
+    }
+  });
+}
+
+function updateUIWithState(state) {
+  // Update Stats
+  const total = state.beneficiaries ? state.beneficiaries.length : 0;
+  const sent = state.sentCount || 0;
+  const failed = state.failedCount || 0;
+  const pending = total - sent - failed;
+
+  const totalStats = document.getElementById('totalStats');
+  if (totalStats) totalStats.textContent = total;
+
+  const sentStats = document.getElementById('sentStats');
+  if (sentStats) sentStats.textContent = sent;
+
+  const failedStats = document.getElementById('failedStats');
+  if (failedStats) failedStats.textContent = failed;
+
+  const pendingStats = document.getElementById('pendingStats');
+  if (pendingStats) pendingStats.textContent = pending;
+
+  if (statsDashboard) statsDashboard.style.display = 'flex';
+  if (progressSection) progressSection.style.display = 'block';
+
+  // Update Progress
+  const currentPhase = document.getElementById('currentPhase');
+  if (currentPhase) currentPhase.textContent = state.currentPhase || 1;
+
+  const totalPhases = document.getElementById('totalPhases');
+  if (totalPhases) totalPhases.textContent = state.totalPhases || 1;
+
+  const progressCount = document.getElementById('progressCount');
+  if (progressCount) progressCount.textContent = sent + failed;
+
+  const totalCount = document.getElementById('totalCount');
+  if (totalCount) totalCount.textContent = total;
+
+  if (total > 0) {
+    const progressPercent = ((sent + failed) / total) * 100;
+    const progressFill = document.getElementById('progressFill');
+    if (progressFill) progressFill.style.width = `${progressPercent}%`;
+  }
+
+  // Update Buttons visibility
+  if (state.isRunning) {
+    if (startBtn) startBtn.style.display = 'none';
+    if (pauseBtn) pauseBtn.style.display = 'inline-block';
+    if (stopBtn) stopBtn.style.display = 'inline-block';
+    if (exportButtons) exportButtons.style.display = 'none';
+
+    if (pauseBtn) {
+      if (state.isPaused) {
+        pauseBtn.textContent = '▶️ Resume';
+      } else {
+        pauseBtn.textContent = '⏸️ Pause';
+      }
+    }
+  } else {
+    if (startBtn) startBtn.style.display = 'inline-block';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    if (stopBtn) stopBtn.style.display = 'none';
+
+    // Show export if finished or stopped after some sends
+    if (total > 0 && (sent > 0 || failed > 0)) {
+       if (exportButtons) exportButtons.style.display = 'flex';
+    }
+  }
 }
 
 function checkStartButton() {
