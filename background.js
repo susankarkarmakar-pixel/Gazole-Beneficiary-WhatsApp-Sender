@@ -20,7 +20,7 @@ chrome.runtime.onStartup.addListener(() => {
   loadState();
 });
 
-// --- Message Listener from Popup ---
+// --- Message Listener from Popup & Content Script ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'START_SENDING') {
     startSending(message);
@@ -41,12 +41,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   else if (message.action === 'GET_STATE') {
     sendResponse({ state: currentState });
   }
-  else if (message.action === 'MESSAGE_SENT') {
-    handleSentMessage(message);
+  else if (message.action === 'SYNC_STATE') {
+    currentState = message.state;
+    saveState();
+    updateUI();
     sendResponse({ status: 'ok' });
   }
-  else if (message.action === 'MESSAGE_FAILED') {
-    handleFailedMessage(message);
+  else if (message.action === 'SHOW_NOTIFICATION') {
+    showNotification(message.message);
     sendResponse({ status: 'ok' });
   }
   else if (message.action === 'EXPORT_REPORT') {
@@ -81,168 +83,38 @@ async function startSending(data) {
     phaseStartTime: Date.now()
   };
 
-  // Save state
   await saveState();
 
-  // Open WhatsApp Web if not already open
   const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+  let tabId;
   
   if (tabs.length === 0) {
-    await chrome.tabs.create({ url: 'https://web.whatsapp.com' });
-    // Wait for WhatsApp to load
+    const newTab = await chrome.tabs.create({ url: 'https://web.whatsapp.com' });
+    tabId = newTab.id;
     await new Promise(resolve => setTimeout(resolve, 5000));
-  }
-
-  // Start processing
-  processNextBatch();
-}
-
-// --- Process Next Batch (Phase) ---
-async function processNextBatch() {
-  if (!currentState.isRunning || currentState.isPaused) return;
-
-  const { batchSize, minDelay, maxDelay, phaseCooldown } = currentState.settings;
-  const startIndex = currentState.currentIndex;
-  const endIndex = Math.min(startIndex + batchSize, currentState.beneficiaries.length);
-
-  // Update UI with phase info
-  updateUI();
-
-  // Process each beneficiary in current batch
-  for (let i = startIndex; i < endIndex; i++) {
-    if (!currentState.isRunning || currentState.isPaused) break;
-
-    const beneficiary = currentState.beneficiaries[i];
-    
-    // Send message via content script
-    await sendMessageToWhatsApp(beneficiary);
-
-    // Random delay between messages
-    const delay = randomDelay(minDelay, maxDelay);
-    await sleep(delay * 1000);
-
-    currentState.currentIndex++;
-    currentState.sentCount++;
-  }
-
-  // Phase complete
-  currentState.currentPhase++;
-  currentState.phaseStartTime = Date.now();
-  await saveState();
-  updateUI();
-
-  // Check if more phases remain
-  if (currentState.currentIndex < currentState.beneficiaries.length && currentState.isRunning) {
-    // Cooldown before next phase
-    showNotification(`Phase ${currentState.currentPhase - 1} complete. Next phase in ${phaseCooldown} minutes...`);
-    
-    await sleep(phaseCooldown * 60 * 1000);
-    
-    if (currentState.isRunning && !currentState.isPaused) {
-      processNextBatch();
-    }
   } else {
-    // All done!
-    completeSending();
+    tabId = tabs[0].id;
   }
-}
 
-// --- Send Message to WhatsApp ---
-async function sendMessageToWhatsApp(beneficiary) {
-  try {
-    // Get phone number (ensure +91 prefix)
-    let phone = beneficiary.Phone || beneficiary.phone || beneficiary['Phone Number'] || '';
-    phone = phone.trim();
-    if (!phone.startsWith('+')) {
-      phone = '+91' + phone;
-    }
-
-    // Build message
-    let message = currentState.template;
-    const headers = Object.keys(beneficiary);
-    
-    headers.forEach(header => {
-      const regex = new RegExp(`{{${header}}}`, 'g');
-      message = message.replace(regex, beneficiary[header] || '');
-    });
-
-    if (currentState.addSignature) {
-      message += '\n\n- Gazole BDO Office';
-    }
-
-    // Open WhatsApp tab with phone number
-    const url = `https://web.whatsapp.com/send?phone=${encodeURIComponent(phone)}`;
-    
-    // Try to find existing WhatsApp tab or create new
-    const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
-    let tab;
-    
-    if (tabs.length > 0) {
-      tab = tabs[0];
-      await chrome.tabs.update(tab.id, { url: url, active: true });
-    } else {
-      tab = await chrome.tabs.create({ url: url });
-    }
-
-    // Wait for page to load
-    await sleep(3000);
-
-    // Send message to content script
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      action: 'TYPE_AND_SEND',
-      text: message
-    });
-
-    if (response && response.success) {
-      currentState.sentNumbers.push({
-        phone: phone,
-        name: beneficiary.Name || 'Unknown',
-        time: new Date().toISOString()
-      });
-    } else {
-      throw new Error('Failed to send');
-    }
-
-  } catch (error) {
-    console.error('Error sending message:', error);
-    currentState.failedCount++;
-    currentState.failedNumbers.push({
-      phone: beneficiary.Phone || 'Unknown',
-      name: beneficiary.Name || 'Unknown',
-      reason: error.message
-    });
-  }
-}
-
-// --- Handle Message Sent (from content script) ---
-function handleSentMessage(message) {
-  // Update state if needed
-  console.log('Message sent to:', message.phone);
-}
-
-// --- Handle Message Failed (from content script) ---
-function handleFailedMessage(message) {
-  currentState.failedCount++;
-  currentState.failedNumbers.push({
-    phone: message.phone,
-    name: message.name || 'Unknown',
-    reason: message.reason || 'Unknown error'
-  });
-  saveState();
+  // Delegate loop to content script
+  chrome.tabs.sendMessage(tabId, { action: 'START_SENDING_LOOP', state: currentState });
+  updateUI();
 }
 
 // --- Pause/Resume/Stop Controls ---
 function pauseSending() {
   currentState.isPaused = true;
   saveState();
-  showNotification('Sending paused');
+  relayToWhatsApp({ action: 'PAUSE_SENDING' });
+  updateUI();
 }
 
 function resumeSending() {
   if (currentState.isRunning && currentState.isPaused) {
     currentState.isPaused = false;
-    processNextBatch();
-    showNotification('Sending resumed');
+    saveState();
+    relayToWhatsApp({ action: 'RESUME_SENDING' });
+    updateUI();
   }
 }
 
@@ -250,18 +122,15 @@ function stopSending() {
   currentState.isRunning = false;
   currentState.isPaused = false;
   saveState();
-  showNotification('Sending stopped');
+  relayToWhatsApp({ action: 'STOP_SENDING' });
+  updateUI();
 }
 
-function completeSending() {
-  currentState.isRunning = false;
-  currentState.isPaused = false;
-  saveState();
-  
-  showNotification(`✅ Complete! Sent: ${currentState.sentCount}, Failed: ${currentState.failedCount}`);
-  
-  // Update UI
-  updateUI();
+async function relayToWhatsApp(message) {
+  const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+  if (tabs.length > 0) {
+    chrome.tabs.sendMessage(tabs[0].id, message);
+  }
 }
 
 // --- Utility Functions ---
@@ -286,7 +155,7 @@ async function loadState() {
 
     if (currentState.isRunning && !currentState.isPaused) {
       console.log('Auto-resuming WhatsApp sender...');
-      processNextBatch();
+      relayToWhatsApp({ action: 'START_SENDING_LOOP', state: currentState });
     }
   }
 }
