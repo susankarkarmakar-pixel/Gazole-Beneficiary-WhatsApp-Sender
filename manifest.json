@@ -39,7 +39,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/*"],
+      "resources": ["icons/*", "popup.html", "popup.css", "popup.js"],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ]
