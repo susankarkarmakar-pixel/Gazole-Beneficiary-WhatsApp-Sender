@@ -199,11 +199,33 @@ function checkDailyLimit() {
   });
 }
 
+function normalizePhoneNumber(rawPhone) {
+  const raw = String(rawPhone || '').trim();
+  const hasLeadingPlus = raw.startsWith('+');
+  const digits = raw.replace(/\D/g, '');
+  let normalized;
+
+  if (hasLeadingPlus) {
+    normalized = `+${digits}`;
+  } else if (digits.startsWith('91') && digits.length === 12) {
+    normalized = `+${digits}`;
+  } else if (digits.startsWith('0') && digits.length === 11) {
+    normalized = `+91${digits.slice(1)}`;
+  } else if (digits.length === 10) {
+    normalized = `+91${digits}`;
+  } else {
+    throw new Error('Unrecognized phone format');
+  }
+
+  if (!/^\+91\d{10}$/.test(normalized)) {
+    throw new Error('Unrecognized phone format');
+  }
+  return normalized;
+}
+
 async function sendMessageToWhatsApp(beneficiary) {
   try {
-    let phone = beneficiary.Phone || beneficiary.phone || beneficiary['Phone Number'] || '';
-    phone = phone.trim();
-    if (!phone.startsWith('+')) phone = '+91' + phone;
+    const phone = normalizePhoneNumber(beneficiary.Phone || beneficiary.phone || beneficiary['Phone Number'] || '');
 
     let message = currentState.template;
     const headers = Object.keys(beneficiary);
@@ -235,9 +257,7 @@ async function sendMessageToWhatsApp(beneficiary) {
 }
 
 async function typeAndSend(phone, message, attachment) {
-    phone = String(phone || '').trim();
-    if (!phone) throw new Error('Phone number is required');
-    if (!phone.startsWith('+')) phone = '+91' + phone;
+    phone = normalizePhoneNumber(phone);
 
     // Look for new chat button
     const newChatBtn = document.querySelector('div[title="New chat"], div[data-testid="chat"]');
@@ -387,13 +407,20 @@ async function executeWhatsAppAction(text) {
       }
       
       if (!inputBox) {
-        // Check if it's an invalid number popup
-        if (document.querySelector('span[data-testid="block-dialog"]') || document.querySelector('div[data-testid="popup-contents"]')) {
+        // These selectors should be periodically re-verified against live WhatsApp Web;
+        // they are the most likely part of this flow to silently break over time.
+        const invalidNumberDialog = document.querySelector('span[data-testid="block-dialog"], div[data-testid="popup-contents"]');
+        if (invalidNumberDialog) {
           closeInvalidNumberPopup();
           reject(new Error('Invalid number or not on WhatsApp'));
           return;
         }
-        reject(new Error('Message input box not found'));
+        const domSnippet = (document.body && (document.body.innerText || document.body.textContent) || '').slice(0, 300);
+        console.warn('WhatsApp message input unavailable', {
+          url: window.location.href,
+          domSnippet
+        });
+        reject(new Error('Unknown failure (number may be invalid or page did not load)'));
         return;
       }
 

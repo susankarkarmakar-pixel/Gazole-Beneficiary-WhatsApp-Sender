@@ -11,8 +11,6 @@ const fileInput = document.getElementById('csvFile');
 const fileInfo = document.getElementById('fileInfo');
 const fileName = document.getElementById('fileName');
 const fileRows = document.getElementById('fileRows');
-const columnMapping = document.getElementById('columnMapping');
-const mappingGrid = document.getElementById('mappingGrid');
 const messageTemplate = document.getElementById('messageTemplate');
 const chipsContainer = document.getElementById('chipsContainer');
 const previewBtn = document.getElementById('previewBtn');
@@ -27,6 +25,7 @@ const statusMessage = document.getElementById('statusMessage');
 const statsDashboard = document.getElementById('statsDashboard');
 const progressSection = document.getElementById('progressSection');
 const exportButtons = document.getElementById('exportButtons');
+const confirmPreview = document.getElementById('confirmPreview');
 const testSendBtn = document.getElementById('testSendBtn');
 const testSendPanel = document.getElementById('testSendPanel');
 const testPhoneInput = document.getElementById('testPhoneInput');
@@ -121,8 +120,7 @@ function setupFileUpload() {
     } else {
       const reader = new FileReader();
       reader.onload = (event) => {
-        const text = event.target.result;
-        parseCSV(text);
+        parseCSV(event.target.result);
       };
       reader.readAsText(file);
     }
@@ -130,6 +128,14 @@ function setupFileUpload() {
 }
 
 function parseCSV(text) {
+  if (text.includes('\uFFFD') || /(?:Ã.|Â.|â[\x80-\xBF])/.test(text)) {
+    showStatus('This CSV may use a non-UTF-8 encoding. Re-export it using Excel’s “CSV UTF-8 (Comma delimited)” option.', 'error');
+    return;
+  }
+
+  // Excel UTF-8 CSV files may include a BOM; do not keep it on the first header.
+  text = text.replace(/^\uFEFF/, '');
+
   // Robust CSV parser
   const parseLine = (line) => {
     const result = [];
@@ -332,6 +338,13 @@ function setupPreview() {
 
     generatePreview();
     previewSection.style.display = 'block';
+  });
+
+  confirmPreview.addEventListener('click', () => {
+    previewSection.style.display = 'none';
+    const settingsTabButton = document.querySelector('.tab-btn[data-tab="settings"]');
+    if (settingsTabButton) settingsTabButton.click();
+    startBtn.focus();
   });
 }
 
