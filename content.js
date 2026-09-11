@@ -96,15 +96,135 @@ observer.observe(document.body, { childList: true, subtree: true });
 setTimeout(injectUI, 3000);
 
 
+// --- Helper: Sleep ---
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+let currentState = null;
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'TYPE_AND_SEND') {
-    executeWhatsAppAction(message.text)
-      .then(result => sendResponse({ success: true, result }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    
-    return true; // Keep channel open for async response
+  if (message.action === 'START_SENDING_LOOP') {
+    currentState = message.state;
+    processNextBatch();
+    sendResponse({ status: 'started' });
+  } else if (message.action === 'PAUSE_SENDING') {
+    if (currentState) currentState.isPaused = true;
+    sendResponse({ status: 'paused' });
+  } else if (message.action === 'RESUME_SENDING') {
+    if (currentState && currentState.isPaused) {
+      currentState.isPaused = false;
+      processNextBatch();
+    }
+    sendResponse({ status: 'resumed' });
+  } else if (message.action === 'STOP_SENDING') {
+    if (currentState) currentState.isRunning = false;
+    sendResponse({ status: 'stopped' });
   }
+  return true;
 });
+
+function randomDelay(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+async function processNextBatch() {
+  if (!currentState || !currentState.isRunning || currentState.isPaused) return;
+
+  const { batchSize, minDelay, maxDelay, phaseCooldown } = currentState.settings;
+  const startIndex = currentState.currentIndex;
+  const endIndex = Math.min(startIndex + batchSize, currentState.beneficiaries.length);
+
+  // Notify background script of UI update
+  chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
+
+  for (let i = startIndex; i < endIndex; i++) {
+    if (!currentState.isRunning || currentState.isPaused) break;
+
+    const beneficiary = currentState.beneficiaries[i];
+    await sendMessageToWhatsApp(beneficiary);
+
+    const delay = randomDelay(minDelay, maxDelay);
+    await sleep(delay * 1000);
+
+    currentState.currentIndex++;
+    currentState.sentCount++;
+    chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
+  }
+
+  if (!currentState.isRunning || currentState.isPaused) return;
+
+  currentState.currentPhase++;
+  chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
+
+  if (currentState.currentIndex < currentState.beneficiaries.length) {
+    chrome.runtime.sendMessage({ action: 'SHOW_NOTIFICATION', message: `Phase ${currentState.currentPhase - 1} complete. Next phase in ${phaseCooldown} minutes...` });
+    await sleep(phaseCooldown * 60 * 1000);
+    if (currentState.isRunning && !currentState.isPaused) {
+      processNextBatch();
+    }
+  } else {
+    currentState.isRunning = false;
+    chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
+    chrome.runtime.sendMessage({ action: 'SHOW_NOTIFICATION', message: `✅ Complete! Sent: ${currentState.sentCount}, Failed: ${currentState.failedCount}` });
+  }
+}
+
+async function sendMessageToWhatsApp(beneficiary) {
+  try {
+    let phone = beneficiary.Phone || beneficiary.phone || beneficiary['Phone Number'] || '';
+    phone = phone.trim();
+    if (!phone.startsWith('+')) phone = '+91' + phone;
+
+    let message = currentState.template;
+    const headers = Object.keys(beneficiary);
+    headers.forEach(header => {
+      const regex = new RegExp(`{{${header}}}`, 'g');
+      message = message.replace(regex, beneficiary[header] || '');
+    });
+
+    if (currentState.addSignature) message += '\n\n- Gazole BDO Office';
+
+    // Look for new chat button
+    const newChatBtn = document.querySelector('div[title="New chat"], div[data-testid="chat"]');
+    if (newChatBtn) {
+      newChatBtn.click();
+      await sleep(1000);
+      const searchBox = document.querySelector('div[contenteditable="true"][data-testid="chat-list-search"]');
+      if (searchBox) {
+        searchBox.focus();
+        document.execCommand('insertText', false, phone);
+        await sleep(2000);
+        const searchResult = document.querySelector('div[data-testid="cell-frame-container"]');
+        if (searchResult) searchResult.click();
+      }
+    } else {
+      // Fallback API if available
+      const link = document.createElement('a');
+      link.href = `https://web.whatsapp.com/send?phone=${encodeURIComponent(phone)}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    await sleep(3000); // Wait for chat to load
+    await executeWhatsAppAction(message);
+
+    currentState.sentNumbers.push({
+      phone: phone,
+      name: beneficiary.Name || 'Unknown',
+      time: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    currentState.failedCount++;
+    currentState.failedNumbers.push({
+      phone: beneficiary.Phone || 'Unknown',
+      name: beneficiary.Name || 'Unknown',
+      reason: error.message
+    });
+  }
+}
 
 async function executeWhatsAppAction(text) {
   return new Promise(async (resolve, reject) => {
