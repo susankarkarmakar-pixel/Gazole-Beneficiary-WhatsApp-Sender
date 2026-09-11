@@ -142,13 +142,15 @@ async function processNextBatch() {
     if (!currentState.isRunning || currentState.isPaused) break;
 
     const beneficiary = currentState.beneficiaries[i];
-    await sendMessageToWhatsApp(beneficiary);
+    const success = await sendMessageToWhatsApp(beneficiary);
 
     const delay = randomDelay(minDelay, maxDelay);
     await sleep(delay * 1000);
 
     currentState.currentIndex++;
-    currentState.sentCount++;
+    if (success) {
+      currentState.sentCount++;
+    }
     chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
   }
 
@@ -215,6 +217,7 @@ async function sendMessageToWhatsApp(beneficiary) {
       name: beneficiary.Name || 'Unknown',
       time: new Date().toISOString()
     });
+    return true;
   } catch (error) {
     console.error('Error sending message:', error);
     currentState.failedCount++;
@@ -223,6 +226,7 @@ async function sendMessageToWhatsApp(beneficiary) {
       name: beneficiary.Name || 'Unknown',
       reason: error.message
     });
+    return false;
   }
 }
 
