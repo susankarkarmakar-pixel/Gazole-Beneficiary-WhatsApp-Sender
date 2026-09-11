@@ -198,7 +198,14 @@ async function sendMessageToWhatsApp(beneficiary) {
         document.execCommand('insertText', false, phone);
         await sleep(2000);
         const searchResult = document.querySelector('div[data-testid="cell-frame-container"]');
-        if (searchResult) searchResult.click();
+        if (searchResult) {
+          searchResult.click();
+        } else {
+          // Look for 'No results found' or similar
+          throw new Error('Number not found on WhatsApp or invalid');
+        }
+      } else {
+         throw new Error('Could not find search box');
       }
     } else {
       // Fallback API if available
