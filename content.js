@@ -1,5 +1,101 @@
 // --- Content Script: Runs inside WhatsApp Web ---
 
+// UI Injection logic
+function injectUI() {
+  // Check if button already exists
+  if (document.getElementById('wa-sender-btn')) return;
+
+  // We look for a good place to inject the button. Usually the header works best.
+  // WhatsApp's DOM changes often, so we might need to find a stable container.
+  // One common stable element is the top header.
+
+  const headerSelectors = [
+    'header',
+    '#side header',
+    'div[data-testid="chatlist-header"]'
+  ];
+
+  let targetHeader = null;
+  for (const selector of headerSelectors) {
+    targetHeader = document.querySelector(selector);
+    if (targetHeader) break;
+  }
+
+  if (targetHeader) {
+    const btn = document.createElement('button');
+    btn.id = 'wa-sender-btn';
+    btn.innerHTML = '🚀 Sender';
+    btn.style.cssText = `
+      background-color: #fff;
+      border: 1px solid #128C7E;
+      color: #128C7E;
+      border-radius: 4px;
+      padding: 5px 10px;
+      margin-left: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      z-index: 1000;
+    `;
+
+    // Attempt to append to the right side of the header
+    const rightIconsContainer = targetHeader.lastElementChild;
+    if (rightIconsContainer) {
+       rightIconsContainer.style.display = 'flex';
+       rightIconsContainer.style.alignItems = 'center';
+       rightIconsContainer.insertBefore(btn, rightIconsContainer.firstChild);
+    } else {
+       targetHeader.appendChild(btn);
+    }
+
+    btn.addEventListener('click', toggleSidebar);
+  }
+}
+
+let sidebarIframe = null;
+
+function toggleSidebar() {
+  if (sidebarIframe) {
+    if (sidebarIframe.style.display === 'none') {
+      sidebarIframe.style.display = 'block';
+    } else {
+      sidebarIframe.style.display = 'none';
+    }
+  } else {
+    createSidebar();
+  }
+}
+
+function createSidebar() {
+  sidebarIframe = document.createElement('iframe');
+  sidebarIframe.src = chrome.runtime.getURL('popup.html');
+  sidebarIframe.style.cssText = `
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 400px;
+    height: 100%;
+    border: none;
+    border-left: 1px solid #ccc;
+    background: #f0f2f5;
+    z-index: 9999;
+    box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+  `;
+  document.body.appendChild(sidebarIframe);
+}
+
+// Observe body for WhatsApp loading to inject button
+const observer = new MutationObserver(() => {
+  injectUI();
+});
+observer.observe(document.body, { childList: true, subtree: true });
+
+// Try injecting initially as well
+setTimeout(injectUI, 3000);
+
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'TYPE_AND_SEND') {
     executeWhatsAppAction(message.text)

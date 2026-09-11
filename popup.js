@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFileUpload();
   setupPasteSection();
   setupVariableChips();
+  setupAttachmentToggle();
   setupPreview();
   setupStartButton();
   setupControlButtons();
@@ -219,6 +220,35 @@ function insertVariable(variable) {
   messageTemplate.selectionStart = messageTemplate.selectionEnd = startPos + variable.length;
   checkStartButton();
 }
+
+// --- 3.5 Attachment Handling ---
+function setupAttachmentToggle() {
+  const toggle = document.getElementById('sendAttachmentToggle');
+  const section = document.getElementById('attachmentSection');
+  const fileInput = document.getElementById('attachmentFile');
+  const fileName = document.getElementById('attachmentFileName');
+
+  if (toggle && section) {
+    toggle.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        section.style.display = 'block';
+      } else {
+        section.style.display = 'none';
+      }
+    });
+  }
+
+  if (fileInput && fileName) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        fileName.textContent = e.target.files[0].name;
+      } else {
+        fileName.textContent = 'Choose File';
+      }
+    });
+  }
+}
+
 
 // --- 4. Message Preview ---
 function setupPreview() {

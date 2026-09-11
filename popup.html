@@ -115,6 +115,24 @@
             Add auto signature (- Gazole BDO Office)
           </label>
         </div>
+
+        <!-- Attachment Toggle -->
+        <div class="toggle-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="sendAttachmentToggle">
+            <span class="toggle-slider"></span>
+            Send attachment
+          </label>
+        </div>
+
+        <div id="attachmentSection" style="display: none; margin-top: 10px;">
+           <label class="file-label" style="padding: 10px; min-height: unset;">
+             <input type="file" id="attachmentFile" style="display: none;">
+             <div class="file-drop-area" style="padding: 10px; border: 1px solid #cbd5e1; font-size: 13px;">
+               <span id="attachmentFileName">Choose File</span>
+             </div>
+           </label>
+        </div>
       </div>
 
       <!-- Preview Button -->
