@@ -102,6 +102,7 @@ function sleep(ms) {
 }
 
 let currentState = null;
+let isProcessing = false;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'START_SENDING_LOOP') {
@@ -150,56 +151,64 @@ function randomDelay(min, max) {
 
 async function processNextBatch() {
   if (!currentState || !currentState.isRunning || currentState.isPaused) return;
+  if (isProcessing) return;
+  isProcessing = true;
 
-  const { batchSize, minDelay, maxDelay, phaseCooldown } = currentState.settings;
-  const startIndex = currentState.currentIndex;
-  const endIndex = Math.min(startIndex + batchSize, currentState.beneficiaries.length);
+  try {
+    const { batchSize, minDelay, maxDelay, phaseCooldown } = currentState.settings;
+    const startIndex = currentState.currentIndex;
+    const endIndex = Math.min(startIndex + batchSize, currentState.beneficiaries.length);
 
-  // Notify background script of UI update
-  chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
-
-  for (let i = startIndex; i < endIndex; i++) {
-    if (!currentState.isRunning || currentState.isPaused) break;
-
-    const dailyLimitStatus = await checkDailyLimit();
-    if (!dailyLimitStatus.allowed) {
-      currentState.isPaused = true;
-      chrome.runtime.sendMessage({
-        action: 'DAILY_LIMIT_REACHED',
-        resumeAt: dailyLimitStatus.resumeAt
-      });
-      break;
-    }
-
-    const beneficiary = currentState.beneficiaries[i];
-    const success = await sendMessageToWhatsApp(beneficiary);
-
-    const delay = randomDelay(minDelay, maxDelay);
-    await sleep(delay * 1000);
-
-    currentState.currentIndex++;
-    if (success) {
-      currentState.sentCount++;
-      chrome.runtime.sendMessage({ action: 'RECORD_DAILY_SEND' });
-    }
+    // Notify background script of UI update
     chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
-  }
 
-  if (!currentState.isRunning || currentState.isPaused) return;
+    for (let i = startIndex; i < endIndex; i++) {
+      if (!currentState.isRunning || currentState.isPaused) break;
 
-  currentState.currentPhase++;
-  chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
+      const dailyLimitStatus = await checkDailyLimit();
+      if (!dailyLimitStatus.allowed) {
+        currentState.isPaused = true;
+        chrome.runtime.sendMessage({
+          action: 'DAILY_LIMIT_REACHED',
+          resumeAt: dailyLimitStatus.resumeAt
+        });
+        break;
+      }
 
-  if (currentState.currentIndex < currentState.beneficiaries.length) {
-    chrome.runtime.sendMessage({ action: 'SHOW_NOTIFICATION', message: `Phase ${currentState.currentPhase - 1} complete. Next phase in ${phaseCooldown} minutes...` });
-    await sleep(phaseCooldown * 60 * 1000);
-    if (currentState.isRunning && !currentState.isPaused) {
-      processNextBatch();
+      const beneficiary = currentState.beneficiaries[i];
+      const success = await sendMessageToWhatsApp(beneficiary);
+
+      const delay = randomDelay(minDelay, maxDelay);
+      await sleep(delay * 1000);
+
+      currentState.currentIndex++;
+      if (success) {
+        currentState.sentCount++;
+        chrome.runtime.sendMessage({ action: 'RECORD_DAILY_SEND' });
+      }
+      chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
     }
-  } else {
-    currentState.isRunning = false;
+
+    if (!currentState.isRunning || currentState.isPaused) return;
+
+    currentState.currentPhase++;
     chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
-    chrome.runtime.sendMessage({ action: 'SHOW_NOTIFICATION', message: `✅ Complete! Sent: ${currentState.sentCount}, Failed: ${currentState.failedCount}` });
+
+    if (currentState.currentIndex < currentState.beneficiaries.length) {
+      chrome.runtime.sendMessage({ action: 'SHOW_NOTIFICATION', message: `Phase ${currentState.currentPhase - 1} complete. Next phase in ${phaseCooldown} minutes...` });
+      await sleep(phaseCooldown * 60 * 1000);
+      if (currentState.isRunning && !currentState.isPaused) {
+        // Let finally release the guard before starting the next phase.
+        setTimeout(() => processNextBatch(), 0);
+      }
+    } else {
+      currentState.isRunning = false;
+      chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
+      chrome.runtime.sendMessage({ action: 'SHOW_NOTIFICATION', message: `✅ Complete! Sent: ${currentState.sentCount}, Failed: ${currentState.failedCount}` });
+    }
+  } finally {
+    // Also releases the guard for pause, stop, daily-limit, errors, and completion.
+    isProcessing = false;
   }
 }
 
