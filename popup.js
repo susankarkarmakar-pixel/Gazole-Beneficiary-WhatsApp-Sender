@@ -476,7 +476,9 @@ function setupStartButton() {
         minDelay: parseInt(document.getElementById('minDelay').value),
         maxDelay: parseInt(document.getElementById('maxDelay').value),
         phaseCooldown: parseInt(document.getElementById('phaseCooldown').value),
-        batchSize: parseInt(document.getElementById('batchSize').value)
+        batchSize: parseInt(document.getElementById('batchSize').value),
+        dailyLimitEnabled: document.getElementById('dailyLimit').checked,
+        dailyLimitCount: parseInt(document.getElementById('dailyLimitCount').value) || 200
       },
       attachment: getSelectedAttachment()
     };
@@ -581,6 +583,11 @@ function updateUIWithState(state) {
     if (progressFill) progressFill.style.width = `${progressPercent}%`;
   }
 
+  if (state.pauseReason === 'daily_limit' && state.dailyLimitResumeAt) {
+    const resumeTime = new Date(state.dailyLimitResumeAt).toLocaleString();
+    showStatus(`Daily limit reached. Sending will resume after ${resumeTime}.`, 'error');
+  }
+
   // Update Buttons visibility
   if (state.isRunning) {
     if (startBtn) startBtn.style.display = 'none';
@@ -622,7 +629,9 @@ function saveSettings() {
     maxDelay: document.getElementById('maxDelay').value,
     phaseCooldown: document.getElementById('phaseCooldown').value,
     batchSize: document.getElementById('batchSize').value,
-    autoSignature: document.getElementById('autoSignature').checked
+    autoSignature: document.getElementById('autoSignature').checked,
+    dailyLimit: document.getElementById('dailyLimit').checked,
+    dailyLimitCount: document.getElementById('dailyLimitCount').value
   };
   chrome.storage.local.set({ 'gazoleSettings': settings });
 }
@@ -636,6 +645,8 @@ function loadSettings() {
       document.getElementById('phaseCooldown').value = s.phaseCooldown || 5;
       document.getElementById('batchSize').value = s.batchSize || 50;
       document.getElementById('autoSignature').checked = s.autoSignature !== false;
+      document.getElementById('dailyLimit').checked = s.dailyLimit !== false;
+      document.getElementById('dailyLimitCount').value = s.dailyLimitCount || 200;
     }
   });
 }

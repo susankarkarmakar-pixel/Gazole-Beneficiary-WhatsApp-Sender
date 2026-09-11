@@ -145,6 +145,16 @@ async function processNextBatch() {
   for (let i = startIndex; i < endIndex; i++) {
     if (!currentState.isRunning || currentState.isPaused) break;
 
+    const dailyLimitStatus = await checkDailyLimit();
+    if (!dailyLimitStatus.allowed) {
+      currentState.isPaused = true;
+      chrome.runtime.sendMessage({
+        action: 'DAILY_LIMIT_REACHED',
+        resumeAt: dailyLimitStatus.resumeAt
+      });
+      break;
+    }
+
     const beneficiary = currentState.beneficiaries[i];
     const success = await sendMessageToWhatsApp(beneficiary);
 
@@ -154,6 +164,7 @@ async function processNextBatch() {
     currentState.currentIndex++;
     if (success) {
       currentState.sentCount++;
+      chrome.runtime.sendMessage({ action: 'RECORD_DAILY_SEND' });
     }
     chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
   }
@@ -174,6 +185,18 @@ async function processNextBatch() {
     chrome.runtime.sendMessage({ action: 'SYNC_STATE', state: currentState });
     chrome.runtime.sendMessage({ action: 'SHOW_NOTIFICATION', message: `✅ Complete! Sent: ${currentState.sentCount}, Failed: ${currentState.failedCount}` });
   }
+}
+
+function checkDailyLimit() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: 'CHECK_DAILY_LIMIT' }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+        resolve({ allowed: currentState.settings.dailyLimitEnabled === false });
+        return;
+      }
+      resolve(response);
+    });
+  });
 }
 
 async function sendMessageToWhatsApp(beneficiary) {
