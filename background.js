@@ -41,6 +41,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   else if (message.action === 'GET_STATE') {
     sendResponse({ state: currentState });
   }
+  else if (message.action === 'TEST_SEND') {
+    sendTestMessage(message.phone, message.message, message.attachment, sendResponse);
+  }
   else if (message.action === 'SYNC_STATE') {
     currentState = message.state;
     saveState();
@@ -63,6 +66,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // Keep channel open for async response
 });
 
+async function sendTestMessage(phone, message, attachment, sendResponse) {
+  try {
+    const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+    let tabId;
+
+    if (tabs.length === 0) {
+      const newTab = await chrome.tabs.create({ url: 'https://web.whatsapp.com' });
+      tabId = newTab.id;
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    } else {
+      tabId = tabs[0].id;
+    }
+
+    chrome.tabs.sendMessage(tabId, {
+      action: 'TYPE_AND_SEND',
+      phone,
+      message,
+      attachment
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ status: 'failed', error: chrome.runtime.lastError.message });
+      } else if (response && response.status === 'sent') {
+        sendResponse({ status: 'sent' });
+      } else {
+        sendResponse({ status: 'failed', error: (response && response.error) || 'WhatsApp did not confirm the message.' });
+      }
+    });
+  } catch (error) {
+    sendResponse({ status: 'failed', error: error.message });
+  }
+}
+
 // --- Start Sending Process ---
 async function startSending(data) {
   // Initialize state
@@ -79,6 +114,7 @@ async function startSending(data) {
     beneficiaries: data.beneficiaries,
     template: data.template,
     addSignature: data.addSignature,
+    attachment: data.attachment || null,
     settings: data.settings,
     phaseStartTime: Date.now()
   };

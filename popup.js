@@ -2,6 +2,7 @@
 let beneficiaries = [];
 let csvHeaders = [];
 let isSending = false;
+let selectedAttachment = null;
 
 // --- DOM Elements ---
 const tabBtns = document.querySelectorAll('.tab-btn');
@@ -26,6 +27,11 @@ const statusMessage = document.getElementById('statusMessage');
 const statsDashboard = document.getElementById('statsDashboard');
 const progressSection = document.getElementById('progressSection');
 const exportButtons = document.getElementById('exportButtons');
+const testSendBtn = document.getElementById('testSendBtn');
+const testSendPanel = document.getElementById('testSendPanel');
+const testPhoneInput = document.getElementById('testPhoneInput');
+const confirmTestSendBtn = document.getElementById('confirmTestSendBtn');
+const cancelTestSendBtn = document.getElementById('cancelTestSendBtn');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -36,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupVariableChips();
   setupAttachmentToggle();
   setupPreview();
+  setupTestSend();
   setupStartButton();
   setupControlButtons();
   setupStateListener();
@@ -283,11 +290,29 @@ function setupAttachmentToggle() {
 
   if (fileInput && fileName) {
     fileInput.addEventListener('change', (e) => {
-      if (e.target.files && e.target.files.length > 0) {
-        fileName.textContent = e.target.files[0].name;
-      } else {
+      const file = e.target.files && e.target.files[0];
+      selectedAttachment = null;
+      if (!file) {
         fileName.textContent = 'Choose File';
+        return;
       }
+
+      fileName.textContent = 'Reading file…';
+      const reader = new FileReader();
+      reader.onload = () => {
+        selectedAttachment = {
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          dataUrl: reader.result
+        };
+        fileName.textContent = file.name;
+      };
+      reader.onerror = () => {
+        selectedAttachment = null;
+        fileName.textContent = 'Could not read file';
+        showStatus('Could not read the selected attachment.', 'error');
+      };
+      reader.readAsDataURL(file);
     });
   }
 }
@@ -307,6 +332,91 @@ function setupPreview() {
 
     generatePreview();
     previewSection.style.display = 'block';
+  });
+}
+
+function setupTestSend() {
+  testSendBtn.addEventListener('click', () => {
+    testSendPanel.style.display = 'block';
+    testPhoneInput.focus();
+  });
+
+  cancelTestSendBtn.addEventListener('click', () => {
+    testSendPanel.style.display = 'none';
+    testPhoneInput.value = '';
+  });
+
+  confirmTestSendBtn.addEventListener('click', sendTestMessage);
+  testPhoneInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') sendTestMessage();
+  });
+}
+
+function buildMessage(data) {
+  const template = messageTemplate.value.trim();
+  if (!template) return '';
+
+  const values = data || {};
+  let message = template.replace(/{{\s*([^}]+?)\s*}}/g, (match, key) => {
+    const value = values[key] ?? values[key.trim()];
+    return value === undefined || value === '' ? 'N/A' : String(value);
+  });
+
+  if (document.getElementById('autoSignature').checked) {
+    message += '\n\n- Gazole BDO Office';
+  }
+  return message;
+}
+
+function getSelectedAttachment() {
+  const toggle = document.getElementById('sendAttachmentToggle');
+  if (!toggle.checked) return null;
+  if (!selectedAttachment) {
+    showStatus('Choose an attachment and wait for it to finish loading.', 'error');
+    return undefined;
+  }
+  return selectedAttachment;
+}
+
+function sendTestMessage() {
+  const phone = testPhoneInput.value.trim();
+  if (!phone) {
+    showStatus('Enter a WhatsApp number for the test message.', 'error');
+    return;
+  }
+  if (!messageTemplate.value.trim()) {
+    showStatus('Please write a message template first.', 'error');
+    return;
+  }
+
+  const beneficiary = beneficiaries[0] || {
+    Name: 'Test Beneficiary',
+    Phone: phone,
+    Status: 'Sample status',
+    Link: 'Sample link'
+  };
+  const attachment = getSelectedAttachment();
+  if (attachment === undefined) return;
+
+  confirmTestSendBtn.disabled = true;
+  showStatus('Sending test message…', 'success');
+
+  chrome.runtime.sendMessage({
+    action: 'TEST_SEND',
+    phone,
+    message: buildMessage(beneficiary),
+    attachment
+  }, (response) => {
+    confirmTestSendBtn.disabled = false;
+    if (chrome.runtime.lastError || !response || response.status !== 'sent') {
+      const reason = response && response.error ? ` ${response.error}` : '';
+      showStatus(`Test message failed.${reason}`, 'error');
+      return;
+    }
+
+    showStatus('Test message sent successfully. Bulk counters were not changed.', 'success');
+    testSendPanel.style.display = 'none';
+    testPhoneInput.value = '';
   });
 }
 
@@ -367,8 +477,11 @@ function setupStartButton() {
         maxDelay: parseInt(document.getElementById('maxDelay').value),
         phaseCooldown: parseInt(document.getElementById('phaseCooldown').value),
         batchSize: parseInt(document.getElementById('batchSize').value)
-      }
+      },
+      attachment: getSelectedAttachment()
     };
+
+    if (payload.attachment === undefined) return;
 
     // Send to background script
     chrome.runtime.sendMessage(payload, (response) => {

@@ -120,6 +120,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'STOP_SENDING') {
     if (currentState) currentState.isRunning = false;
     sendResponse({ status: 'stopped' });
+  } else if (message.action === 'TYPE_AND_SEND') {
+    typeAndSend(message.phone, message.message, message.attachment)
+      .then(() => sendResponse({ status: 'sent' }))
+      .catch(error => sendResponse({ status: 'failed', error: error.message }));
   }
   return true;
 });
@@ -187,6 +191,31 @@ async function sendMessageToWhatsApp(beneficiary) {
 
     if (currentState.addSignature) message += '\n\n- Gazole BDO Office';
 
+    await typeAndSend(phone, message, currentState.attachment || null);
+
+    currentState.sentNumbers.push({
+      phone: phone,
+      name: beneficiary.Name || 'Unknown',
+      time: new Date().toISOString()
+    });
+    return true;
+  } catch (error) {
+    console.error('Error sending message:', error);
+    currentState.failedCount++;
+    currentState.failedNumbers.push({
+      phone: beneficiary.Phone || 'Unknown',
+      name: beneficiary.Name || 'Unknown',
+      reason: error.message
+    });
+    return false;
+  }
+}
+
+async function typeAndSend(phone, message, attachment) {
+    phone = String(phone || '').trim();
+    if (!phone) throw new Error('Phone number is required');
+    if (!phone.startsWith('+')) phone = '+91' + phone;
+
     // Look for new chat button
     const newChatBtn = document.querySelector('div[title="New chat"], div[data-testid="chat"]');
     if (newChatBtn) {
@@ -217,24 +246,99 @@ async function sendMessageToWhatsApp(beneficiary) {
     }
 
     await sleep(3000); // Wait for chat to load
-    await executeWhatsAppAction(message);
+    if (attachment) {
+      await attachAndSendFile(attachment);
+    }
 
-    currentState.sentNumbers.push({
-      phone: phone,
-      name: beneficiary.Name || 'Unknown',
-      time: new Date().toISOString()
-    });
-    return true;
-  } catch (error) {
-    console.error('Error sending message:', error);
-    currentState.failedCount++;
-    currentState.failedNumbers.push({
-      phone: beneficiary.Phone || 'Unknown',
-      name: beneficiary.Name || 'Unknown',
-      reason: error.message
-    });
-    return false;
+    // Send the caption/text separately. This avoids relying on WhatsApp's
+    // attachment-caption composer, which changes more frequently than text chat.
+    if (message && message.trim()) {
+      await executeWhatsAppAction(message);
+    }
+}
+
+async function attachAndSendFile(attachment) {
+  if (!attachment.dataUrl || !attachment.name) {
+    throw new Error('Attachment data is missing');
   }
+
+  const attachButton = await findFirstElement([
+    'span[data-icon="clip"]',
+    '[data-testid="clip"]',
+    'button[aria-label*="Attach"]',
+    'div[role="button"][aria-label*="Attach"]'
+  ], 5000);
+  if (!attachButton) throw new Error('WhatsApp attachment button not found');
+  attachButton.click();
+
+  await sleep(500);
+  selectAttachmentMenuItem(attachment.type);
+  const fileInput = await findAttachmentInput(attachment.type, 5000);
+  if (!fileInput) throw new Error('WhatsApp attachment file input not found');
+
+  const blob = await (await fetch(attachment.dataUrl)).blob();
+  const file = new File([blob], attachment.name, { type: attachment.type || blob.type });
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+
+  try {
+    fileInput.files = transfer.files;
+  } catch (error) {
+    throw new Error('WhatsApp rejected the attachment file input');
+  }
+  fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+  fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+  const sendButton = await findFirstElement([
+    'span[data-icon="send"]',
+    'button[aria-label="Send"]',
+    '[data-testid="send"]'
+  ], 10000);
+  if (!sendButton) throw new Error('WhatsApp attachment send button not found');
+  sendButton.click();
+  await sleep(1000);
+}
+
+async function findAttachmentInput(fileType, timeout) {
+  const wantsMedia = fileType.startsWith('image/') || fileType.startsWith('video/');
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const inputs = Array.from(document.querySelectorAll('input[type="file"]'))
+      .filter(input => !input.disabled);
+    const matching = inputs.find(input => {
+      const accept = (input.getAttribute('accept') || '').toLowerCase();
+      if (!accept) return false;
+      return wantsMedia ? accept.includes('image') || accept.includes('video') : !accept.includes('image') && !accept.includes('video');
+    });
+    if (matching || inputs[0]) return matching || inputs[0];
+    await sleep(100);
+  }
+  return null;
+}
+
+function selectAttachmentMenuItem(fileType) {
+  const wantsMedia = fileType.startsWith('image/') || fileType.startsWith('video/');
+  const wantedLabels = wantsMedia
+    ? ['Photos & videos', 'Photos and videos', 'Photo']
+    : ['Document', 'Documents'];
+  const menuItems = Array.from(document.querySelectorAll('[role="button"], button, li, div'));
+  const item = menuItems.find(element => {
+    const text = (element.textContent || '').trim().toLowerCase();
+    return text && wantedLabels.some(label => text === label.toLowerCase());
+  });
+  if (item) item.click();
+}
+
+async function findFirstElement(selectors, timeout) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element && element.offsetParent !== null) return element;
+    }
+    await sleep(100);
+  }
+  return null;
 }
 
 async function executeWhatsAppAction(text) {

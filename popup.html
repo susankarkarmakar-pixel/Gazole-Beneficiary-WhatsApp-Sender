@@ -191,6 +191,15 @@
       <button class="btn btn-danger" id="stopBtn" style="display: none;">⏹️ Stop</button>
     </div>
 
+    <div class="test-send-panel" id="testSendPanel" style="display: none;">
+      <label class="form-label" for="testPhoneInput">Send a test message to your own number</label>
+      <div class="test-send-input-row">
+        <input type="tel" id="testPhoneInput" placeholder="Your WhatsApp number (e.g. +919876543210)" autocomplete="tel">
+        <button class="btn btn-test-confirm" id="confirmTestSendBtn">Send</button>
+        <button class="btn btn-secondary btn-test-cancel" id="cancelTestSendBtn">Cancel</button>
+      </div>
+    </div>
+
     <!-- Export Buttons (shown after completion) -->
     <div class="export-buttons" id="exportButtons" style="display: none;">
       <button class="btn btn-success" id="exportReport">📊 Export Full Report</button>

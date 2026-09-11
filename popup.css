@@ -469,6 +469,39 @@ textarea:focus {
 .btn-test { background: #e3f2fd; color: #1565c0; }
 .btn-test:hover { background: #bbdefb; }
 
+.test-send-panel {
+  background: #f8fafc;
+  border: 1px solid #dbe4ea;
+  border-radius: 6px;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.test-send-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.test-send-input-row input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.btn-test-confirm,
+.btn-test-cancel {
+  width: auto;
+  margin-top: 0;
+  padding: 8px 10px;
+}
+
+.btn-test-confirm { background: #128C7E; color: white; }
+.btn-test-confirm:hover { background: #075e54; }
+
 .btn-warning { background: #fff3e0; color: #e65100; }
 .btn-warning:hover { background: #ffe0b2; }
 
