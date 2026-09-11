@@ -64,18 +64,61 @@ function setupTabs() {
   });
 }
 
-// --- 2. CSV File Upload & Parsing ---
+// --- 2. CSV & Excel File Upload & Parsing ---
 function setupFileUpload() {
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target.result;
-      parseCSV(text);
-    };
-    reader.readAsText(file);
+    const extension = file.name.split('.').pop().toLowerCase();
+
+    if (extension === 'xlsx' || extension === 'xls') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const data = new Uint8Array(event.target.result);
+        try {
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+          if (json.length === 0) {
+            showStatus('Excel file is empty.', 'error');
+            return;
+          }
+
+          csvHeaders = Object.keys(json[0]);
+          beneficiaries = json.map(row => {
+            const cleanRow = {};
+            csvHeaders.forEach(h => {
+              cleanRow[h] = row[h] ? String(row[h]).trim() : '';
+            });
+            return cleanRow;
+          });
+
+          // Update UI
+          fileName.textContent = file.name;
+          fileRows.textContent = beneficiaries.length;
+          fileInfo.style.display = 'block';
+
+          generateVariableChips();
+          showStatus(`Successfully loaded ${beneficiaries.length} beneficiaries!`, 'success');
+          checkStartButton();
+
+        } catch (err) {
+          console.error(err);
+          showStatus('Error reading Excel file.', 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target.result;
+        parseCSV(text);
+      };
+      reader.readAsText(file);
+    }
   });
 }
 
