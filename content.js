@@ -128,6 +128,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+// A WhatsApp Web reload destroys this content script's in-memory state. Restore
+// the persisted background state so an active campaign resumes without needing
+// a full browser restart.
+function hydrateStateAndResume() {
+  chrome.runtime.sendMessage({ action: 'GET_STATE' }, (response) => {
+    if (chrome.runtime.lastError || !response || !response.state) return;
+
+    currentState = response.state;
+    if (currentState.isRunning && !currentState.isPaused) {
+      processNextBatch();
+    }
+  });
+}
+
+hydrateStateAndResume();
+
 function randomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -491,9 +507,4 @@ function waitForElement(selector, timeout) {
       reject(new Error(`Timeout waiting for ${selector}`));
     }, timeout);
   });
-}
-
-// --- Helper: Sleep ---
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
